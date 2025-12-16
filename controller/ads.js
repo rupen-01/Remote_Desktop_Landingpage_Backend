@@ -6,35 +6,42 @@ exports.createOrUpdateBanner = async (req, res) => {
   try {
     const { title, redirectLink } = req.body;
 
+    if (!title) {
+      return res.status(400).json({ message: "Title is required" });
+    }
+
+    // 🔍 find banner by title (banner1 / banner2)
     let banner = await Banner.findOne({ title });
 
-    // 🔥 AUTO URL (LOCAL + LIVE)
+    // 🔥 AUTO BASE URL (LOCAL + LIVE)
     const baseUrl = `${req.protocol}://${req.get("host")}`;
 
+    // 📁 new uploaded file path
     const uploadedFilePath = req.file
       ? `${baseUrl}/uploads/banners/${req.file.filename}`
       : null;
 
-    // ===== UPDATE =====
+    // ================= UPDATE =================
     if (banner) {
-      if (uploadedFilePath) {
-        const oldFile = banner.image || banner.videoUrl;
+      // 🧹 DELETE OLD FILE IF NEW FILE UPLOADED
+      if (uploadedFilePath && (banner.image || banner.videoUrl)) {
+        const oldFileUrl = banner.image || banner.videoUrl;
+        const oldFileName = path.basename(oldFileUrl);
 
-        if (oldFile) {
-          const oldFilePath = path.join(
-            __dirname,
-            "..",
-            "uploads",
-            "banners",
-            path.basename(oldFile)
-          );
+        const oldFilePath = path.join(
+          __dirname,
+          "..",
+          "uploads",
+          "banners",
+          oldFileName
+        );
 
-          if (fs.existsSync(oldFilePath)) {
-            fs.unlinkSync(oldFilePath);
-          }
+        if (fs.existsSync(oldFilePath)) {
+          fs.unlinkSync(oldFilePath);
         }
       }
 
+      // 🔄 SAVE NEW FILE
       if (uploadedFilePath) {
         if (req.file.mimetype.startsWith("image")) {
           banner.image = uploadedFilePath;
@@ -48,10 +55,13 @@ exports.createOrUpdateBanner = async (req, res) => {
       banner.redirectLink = redirectLink || banner.redirectLink;
       await banner.save();
 
-      return res.json({ message: "Banner Updated", banner });
+      return res.json({
+        message: "Banner Updated (Old file deleted)",
+        banner
+      });
     }
 
-    // ===== CREATE =====
+    // ================= CREATE =================
     const newBanner = await Banner.create({
       title,
       image: req.file?.mimetype.startsWith("image") ? uploadedFilePath : null,
@@ -59,40 +69,12 @@ exports.createOrUpdateBanner = async (req, res) => {
       redirectLink
     });
 
-    res.status(201).json({ message: "Banner Created", banner: newBanner });
+    res.status(201).json({
+      message: "Banner Created",
+      banner: newBanner
+    });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-};
-
-// ========= GET =========
-exports.getBanners = async (req, res) => {
-  try {
-    const banners = await Banner.find({ isActive: true });
-    res.json(banners);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// ========= DELETE =========
-exports.deleteBanner = async (req, res) => {
-  const banner = await Banner.findById(req.params.id);
-
-  if (!banner) return res.status(404).json({ message: "Not found" });
-
-  const file = banner.image || banner.videoUrl;
-  if (file) {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "uploads",
-      "banners",
-      path.basename(file)
-    );
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  }
-
-  await banner.deleteOne();
-  res.json({ message: "Banner Deleted" });
 };
