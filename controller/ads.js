@@ -8,14 +8,15 @@ exports.createOrUpdateBanner = async (req, res) => {
 
     let banner = await Banner.findOne({ title });
 
-    const baseUrl = process.env.BASE_URL || "http://localhost:5000";
+    // 🔥 AUTO URL (LOCAL + LIVE)
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
 
-    let uploadedFilePath = req.file
+    const uploadedFilePath = req.file
       ? `${baseUrl}/uploads/banners/${req.file.filename}`
       : null;
 
+    // ===== UPDATE =====
     if (banner) {
-      // Delete old file if new uploaded
       if (uploadedFilePath) {
         const oldFile = banner.image || banner.videoUrl;
 
@@ -28,11 +29,12 @@ exports.createOrUpdateBanner = async (req, res) => {
             path.basename(oldFile)
           );
 
-          if (fs.existsSync(oldFilePath)) fs.unlinkSync(oldFilePath);
+          if (fs.existsSync(oldFilePath)) {
+            fs.unlinkSync(oldFilePath);
+          }
         }
       }
 
-      // Update with new uploaded file
       if (uploadedFilePath) {
         if (req.file.mimetype.startsWith("image")) {
           banner.image = uploadedFilePath;
@@ -44,16 +46,16 @@ exports.createOrUpdateBanner = async (req, res) => {
       }
 
       banner.redirectLink = redirectLink || banner.redirectLink;
-
       await banner.save();
+
       return res.json({ message: "Banner Updated", banner });
     }
 
-    // Create new banner
+    // ===== CREATE =====
     const newBanner = await Banner.create({
       title,
-      image: req.file && req.file.mimetype.startsWith("image") ? uploadedFilePath : null,
-      videoUrl: req.file && req.file.mimetype.startsWith("video") ? uploadedFilePath : null,
+      image: req.file?.mimetype.startsWith("image") ? uploadedFilePath : null,
+      videoUrl: req.file?.mimetype.startsWith("video") ? uploadedFilePath : null,
       redirectLink
     });
 
@@ -63,25 +65,34 @@ exports.createOrUpdateBanner = async (req, res) => {
   }
 };
 
-
-// ========== Get Banners ==========
+// ========= GET =========
 exports.getBanners = async (req, res) => {
   try {
     const banners = await Banner.find({ isActive: true });
-
-    res.json(
-      banners.map(b => ({
-        ...b._doc,
-        image: b.image || null,
-        videoUrl: b.videoUrl || null
-      }))
-    );
+    res.json(banners);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
+// ========= DELETE =========
 exports.deleteBanner = async (req, res) => {
-  await Banner.findByIdAndDelete(req.params.id);
+  const banner = await Banner.findById(req.params.id);
+
+  if (!banner) return res.status(404).json({ message: "Not found" });
+
+  const file = banner.image || banner.videoUrl;
+  if (file) {
+    const filePath = path.join(
+      __dirname,
+      "..",
+      "uploads",
+      "banners",
+      path.basename(file)
+    );
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  }
+
+  await banner.deleteOne();
   res.json({ message: "Banner Deleted" });
 };

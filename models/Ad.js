@@ -13,7 +13,6 @@ const bannerSchema = new mongoose.Schema(
 
     redirectLink: {
       type: String,
-      required: true,
     },
 
     isActive: {
