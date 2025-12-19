@@ -6,19 +6,20 @@ const bannerSchema = new mongoose.Schema(
       type: String,
       enum: ["banner1", "banner2"],
       required: true,
+      unique: true,
     },
 
     image: String,
     videoUrl: String,
 
-    redirectLink: {
-      type: String,
-    },
+    cloudinaryId: String, // 🔥 IMPORTANT
+
+    redirectLink: String,
 
     isActive: {
       type: Boolean,
       default: true,
-    }
+    },
   },
   { timestamps: true }
 );

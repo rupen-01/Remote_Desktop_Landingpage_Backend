@@ -7,14 +7,7 @@ const {
   deleteBanner,
 } = require("../controller/ads");
 
-
-router.post(
-  "/create",
-  upload.single("file"),   // 🔥 FIXED FIELD NAME
-  createOrUpdateBanner
-);
-
-
+router.post("/create", upload.single("file"), createOrUpdateBanner);
 router.get("/", getBanners);
 router.delete("/:id", deleteBanner);
 

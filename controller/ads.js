@@ -1,6 +1,27 @@
-const path = require("path");
-const fs = require("fs");
 const Banner = require("../models/Ad");
+const cloudinary = require("../config/cloudinary");
+
+// ===== helper =====
+const uploadToCloudinary = (file) => {
+  const resourceType = file.mimetype.startsWith("video")
+    ? "video"
+    : "image";
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: "banners",
+        resource_type: resourceType,
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+
+    stream.end(file.buffer);
+  });
+};
 
 // ================= CREATE / UPDATE =================
 const createOrUpdateBanner = async (req, res) => {
@@ -8,34 +29,34 @@ const createOrUpdateBanner = async (req, res) => {
     const { title, redirectLink } = req.body;
 
     let banner = await Banner.findOne({ title });
+    let uploadResult = null;
 
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    if (req.file) {
+      uploadResult = await uploadToCloudinary(req.file);
+    }
 
-    const uploadedFilePath = req.file
-      ? `${baseUrl}/uploads/banners/${req.file.filename}`
-      : null;
-
+    // ===== UPDATE =====
     if (banner) {
-      if (uploadedFilePath && (banner.image || banner.videoUrl)) {
-        const oldFile = banner.image || banner.videoUrl;
-        const oldPath = path.join(
-          __dirname,
-          "..",
-          "uploads",
-          "banners",
-          path.basename(oldFile)
-        );
-        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      // 🔥 DELETE OLD MEDIA (CORRECT WAY)
+      if (uploadResult && banner.cloudinaryId) {
+        const oldResourceType = banner.videoUrl ? "video" : "image";
+
+        await cloudinary.uploader.destroy(banner.cloudinaryId, {
+          resource_type: oldResourceType,
+        });
       }
 
-      if (uploadedFilePath) {
+      // 🔥 SAVE NEW MEDIA
+      if (uploadResult) {
         if (req.file.mimetype.startsWith("image")) {
-          banner.image = uploadedFilePath;
+          banner.image = uploadResult.secure_url;
           banner.videoUrl = null;
         } else {
-          banner.videoUrl = uploadedFilePath;
+          banner.videoUrl = uploadResult.secure_url;
           banner.image = null;
         }
+
+        banner.cloudinaryId = uploadResult.public_id;
       }
 
       banner.redirectLink = redirectLink || banner.redirectLink;
@@ -44,15 +65,23 @@ const createOrUpdateBanner = async (req, res) => {
       return res.json({ message: "Banner Updated", banner });
     }
 
+    // ===== CREATE =====
     const newBanner = await Banner.create({
       title,
-      image: req.file?.mimetype.startsWith("image") ? uploadedFilePath : null,
-      videoUrl: req.file?.mimetype.startsWith("video") ? uploadedFilePath : null,
+      image: req.file?.mimetype.startsWith("image")
+        ? uploadResult?.secure_url
+        : null,
+      videoUrl: req.file?.mimetype.startsWith("video")
+        ? uploadResult?.secure_url
+        : null,
+      cloudinaryId: uploadResult?.public_id,
       redirectLink,
     });
 
     res.status(201).json({ message: "Banner Created", banner: newBanner });
+
   } catch (err) {
+    console.error("Banner Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -75,26 +104,24 @@ const deleteBanner = async (req, res) => {
       return res.status(404).json({ message: "Banner not found" });
     }
 
-    const file = banner.image || banner.videoUrl;
-    if (file) {
-      const filePath = path.join(
-        __dirname,
-        "..",
-        "uploads",
-        "banners",
-        path.basename(file)
-      );
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    // 🔥 DELETE FROM CLOUDINARY (FIXED)
+    if (banner.cloudinaryId) {
+      const resourceType = banner.videoUrl ? "video" : "image";
+
+      await cloudinary.uploader.destroy(banner.cloudinaryId, {
+        resource_type: resourceType,
+      });
     }
 
     await banner.deleteOne();
     res.json({ message: "Banner Deleted" });
+
   } catch (err) {
+    console.error("Delete Banner Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
 
-// 🔥 VERY IMPORTANT EXPORT
 module.exports = {
   createOrUpdateBanner,
   getBanners,
